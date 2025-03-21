@@ -7,30 +7,6 @@ from tkinter import messagebox, simpledialog
 import threading  # Pour exécuter des tâches en arrière-plan et éviter les blocages
 import os  # Pour gérer les fichiers
 from datetime import datetime  # Pour ajouter des timestamps aux rapports
-import requests
-
-def download_update(update_url, save_path):
-    try:
-        print("Téléchargement de la mise à jour...")
-        response = requests.get(update_url, stream=True)
-        with open(save_path, "wb") as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
-        print(f"Mise à jour téléchargée : {save_path}")
-    except Exception as e:
-        print(f"Erreur lors du téléchargement : {e}")
-
-def install_update(save_path):
-    print("Installation de la mise à jour...")
-    os.startfile(save_path)  # Lance l'exécutable ou l'installateur
-
-current_version = "1.1.0"
-latest_version_url = "https://github.com/DemoniX9710/ProjetBureau"
-save_path = "C:\\Users\\kiera\\Downloads\\ProjetBureau"
-
-download_update(latest_version_url, save_path)
-install_update(save_path)
 
 def thread_safe(func):
     """Décorateur pour exécuter des fonctions en thread afin d'éviter les blocages GUI."""
