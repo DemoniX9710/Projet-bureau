@@ -2,14 +2,51 @@ import requests
 import random
 import string
 import time
-import argparse
-import json
 import os
+import mysql.connector
+import tkinter as tk
+from tkinter import messagebox, scrolledtext
 from datetime import datetime
 
-# Configuration
-def generate_random_string(length=10):
-    return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
+# Configuration de la base de données
+DB_HOST = "mysql-demonix9710.alwaysdata.net"
+DB_USER = "373154"
+DB_PASSWORD = "Troll2.0"
+DB_NAME = "demonix9710_projet_bureau"
+
+def save_report_to_db(report, timestamp):
+    try:
+        connection = mysql.connector.connect(
+            host=DB_HOST,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            database=DB_NAME
+        )
+        cursor = connection.cursor()
+        
+        for entry in report:
+            payload = entry.get("payload", "")
+            status_code = entry.get("status_code", 0)
+            response_length = entry.get("response_length", 0)
+            potential_vulnerability = entry.get("potential_vulnerability", False)
+            error = entry.get("error", "")
+            
+            cursor.execute(
+                """
+                INSERT INTO fuzzing_reports (timestamp, payload, status_code, response_length, potential_vulnerability, error)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (timestamp, payload, status_code, response_length, potential_vulnerability, error)
+            )
+        
+        connection.commit()
+        update_console("✅ Rapport sauvegardé dans la base de données.\n")
+    except mysql.connector.Error as e:
+        update_console(f"❌ Erreur lors de la connexion à la base de données: {e}\n")
+    finally:
+        if connection.is_connected():
+            cursor.close()
+            connection.close()
 
 def fuzz(target_url, param_name, method="GET"):
     payloads = [
@@ -34,11 +71,11 @@ def fuzz(target_url, param_name, method="GET"):
             elif method == "POST":
                 response = requests.post(target_url, data=data, timeout=5)
             else:
-                print("Méthode HTTP non supportée")
+                update_console("Méthode HTTP non supportée\n")
                 return
             
-            print(f"Test avec payload: {payload}")
-            print(f"Statut: {response.status_code}, Longueur: {len(response.text)}")
+            update_console(f"Test avec payload: {payload}\n")
+            update_console(f"Statut: {response.status_code}, Longueur: {len(response.text)}\n")
             
             result = {
                 "payload": payload,
@@ -48,32 +85,64 @@ def fuzz(target_url, param_name, method="GET"):
             }
             
             if "error" in response.text.lower() or response.status_code == 500:
-                print(f"⚠️ Potentielle vulnérabilité détectée avec payload: {payload}")
+                update_console(f"⚠️ Potentielle vulnérabilité détectée avec payload: {payload}\n")
                 result["potential_vulnerability"] = True
             
             report.append(result)
             
         except requests.exceptions.RequestException as e:
-            print(f"Erreur lors de la requête: {e}")
+            update_console(f"Erreur lors de la requête: {e}\n")
             report.append({"payload": payload, "error": str(e)})
         
         time.sleep(1)
     
-    # Génération d'un nom de fichier unique pour le rapport
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    report_filename = f"fuzzing_report_{timestamp}.json"
+    report_filename = f"fuzzing_report_{timestamp}.txt"
     
-    # Sauvegarde du rapport
     with open(report_filename, "w") as f:
-        json.dump(report, f, indent=4)
-    print(f"📄 Rapport de sécurité généré : {report_filename}")
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Fuzzer un site web pour détecter des failles de sécurité.")
-    parser.add_argument("url", help="URL de la cible")
-    parser.add_argument("param", help="Nom du paramètre à tester")
-    parser.add_argument("--method", choices=["GET", "POST"], default="GET", help="Méthode HTTP à utiliser")
+        for entry in report:
+            f.write(f"Payload: {entry.get('payload', '')}\n")
+            f.write(f"Status Code: {entry.get('status_code', 0)}\n")
+            f.write(f"Response Length: {entry.get('response_length', 0)}\n")
+            f.write(f"Potential Vulnerability: {entry.get('potential_vulnerability', False)}\n")
+            f.write(f"Error: {entry.get('error', '')}\n")
+            f.write("-" * 50 + "\n")
+    update_console(f"📄 Rapport de sécurité généré : {report_filename}\n")
     
-    args = parser.parse_args()
-    print("Démarrage du fuzzing...")
-    fuzz(args.url, args.param, args.method)
+    save_report_to_db(report, timestamp)
+
+def update_console(message):
+    console_text.insert(tk.END, message)
+    console_text.see(tk.END)
+    root.update()
+
+def start_fuzzing():
+    url = url_entry.get()
+    param = param_entry.get()
+    if not url or not param:
+        messagebox.showerror("Erreur", "Veuillez entrer une URL et un paramètre.")
+        return
+    update_console("🔍 Début du fuzzing...\n")
+    fuzz(url, param, "GET")
+    update_console("✅ Fuzzing terminé.\n")
+
+# Interface graphique
+root = tk.Tk()
+root.title("Fuzzer Web")
+root.geometry("500x400")
+
+tk.Label(root, text="URL cible:").pack()
+url_entry = tk.Entry(root, width=50)
+url_entry.pack()
+
+tk.Label(root, text="Nom du paramètre:").pack()
+param_entry = tk.Entry(root, width=30)
+param_entry.pack()
+
+tk.Button(root, text="Lancer le Fuzzing", command=start_fuzzing).pack()
+
+# Zone de console
+console_text = scrolledtext.ScrolledText(root, height=10, width=60)
+console_text.pack()
+
+root.mainloop()
